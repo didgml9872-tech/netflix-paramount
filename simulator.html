@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M&A 딜 RPV 비교 시뮬레이터</title>
+    <!-- Tailwind CSS CDN 사용 (외부 파일이므로 호스팅 시 정상 작동) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+            color: #1f2937;
+            padding: 1rem;
+        }
+        .card {
+            background-color: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        .scenario-card {
+            border: 2px solid transparent;
+            cursor: default;
+        }
+        .highlight-win {
+            border-color: #10b981; /* Green-500 */
+            background-color: #ecfdf5; /* Green-50 */
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #d1d5db;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #10b981;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .input-label {
+            font-weight: 600;
+            color: #4b5563;
+        }
+    </style>
+</head>
+<body onload="calculateRPVSim()">
+    <div id="app" class="p-2 sm:p-4 max-w-5xl mx-auto">
+        <h1 class="text-xl sm:text-2xl font-extrabold text-center mb-4 text-indigo-700">
+            M&A 딜 위험 조정 현재 가치(RPV) 비교 시뮬레이터
+        </h1>
+        
+        <!-- 핵심 변수 설정 -->
+        <div class="card p-4 mb-6">
+            <h2 class="text-lg font-bold mb-3 text-indigo-600">📊 핵심 변수 설정</h2>
+            
+            <!-- 요구 수익률 (재투자 수익률) -->
+            <div class="mb-4">
+                <label for="hurdleRateSim" class="input-label flex justify-between items-center text-sm">
+                    <span>주주 요구 수익률 / 재투자 수익률 (연환산)</span>
+                    <span id="hurdleRateValueSim" class="text-lg font-bold text-indigo-700">7.0%</span>
+                </label>
+                <input type="range" id="hurdleRateSim" min="0.01" max="15.0" step="0.1" value="7.0" oninput="updateRangeLabelSim('hurdleRateSim', 'hurdleRateValueSim', '%'); calculateRPVSim();">
+            </div>
+
+            <!-- 넷플릭스 딜 무산 확률 -->
+            <div class="mb-4">
+                <label for="failRiskSim" class="input-label flex justify-between items-center text-sm">
+                    <span>넷플릭스 딜 합병 무산(실패) 확률</span>
+                    <span id="failRiskValueSim" class="text-lg font-bold text-indigo-700">25%</span>
+                </label>
+                <input type="range" id="failRiskSim" min="0" max="50" step="1" value="25" oninput="updateRangeLabelSim('failRiskSim', 'failRiskValueSim', '%'); calculateRPVSim();">
+            </div>
+
+            <!-- 양도소득세율 -->
+            <div>
+                <label for="taxRateSim" class="input-label flex justify-between items-center text-sm">
+                    <span>현금 수취 시 양도소득세율 (파라마운트)</span>
+                    <span id="taxRateValueSim" class="text-lg font-bold text-indigo-700">22.0%</span>
+                </label>
+                <input type="range" id="taxRateSim" min="0" max="40" step="0.5" value="22.0" oninput="updateRangeLabelSim('taxRateSim', 'taxRateValueSim', '%'); calculateRPVSim();">
+            </div>
+        </div>
+        
+        <!-- 시뮬레이션 결과 및 비교 -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            
+            <!-- 시나리오 1: 넷플릭스 인수 결과 -->
+            <div id="netflixCardSim" class="scenario-card card p-4">
+                <h2 class="text-base font-bold mb-2 text-red-600">시나리오 1: 넷플릭스 딜</h2>
+                <p class="text-xs font-semibold text-gray-500 mb-2">High Risk, Tax-Deferred</p>
+                <p class="text-sm font-bold text-gray-800">RPV:</p>
+                <p id="netflixRPVSim" class="text-xl font-extrabold text-red-800 mt-1">$0.00</p>
+            </div>
+
+            <!-- 시나리오 2: 파라마운트 인수 결과 -->
+            <div id="paramountCardSim" class="scenario-card card p-4">
+                <h2 class="text-base font-bold mb-2 text-green-600">시나리오 2: 파라마운트 딜</h2>
+                <p class="text-xs font-semibold text-gray-500 mb-2">Low Risk, Taxed-Cash</p>
+                <p class="text-sm font-bold text-gray-800">RPV:</p>
+                <p id="paramountRPVSim" class="text-xl font-extrabold text-green-800 mt-1">$0.00</p>
+            </div>
+        </div>
+
+        <!-- 최종 결론 -->
+        <div class="card p-4 bg-indigo-50 border-2 border-indigo-300">
+            <h2 class="text-base font-bold text-center text-indigo-700 mb-1">최종 결론</h2>
+            <p id="winnerDisplaySim" class="text-xl font-extrabold text-center text-indigo-900">결과를 계산 중...</p>
+        </div>
+
+    </div>
+
+    <script>
+        // 초기 상수 설정
+        const NETFLIX_SUCCESS_VALUE = 32.0;
+        const NETFLIX_FAILURE_VALUE = 20.0;
+        const PARAMOUNT_CASH_VALUE = 30.0;
+        const NETFLIX_TIME_MONTHS = 18;
+        const PARAMOUNT_TIME_MONTHS = 6;
+        const REINVEST_TIME_MONTHS = 12;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 초기 로드 시 값 업데이트 및 계산 실행
+            updateRangeLabelSim('hurdleRateSim', 'hurdleRateValueSim', '%');
+            updateRangeLabelSim('failRiskSim', 'failRiskValueSim', '%');
+            updateRangeLabelSim('taxRateSim', 'taxRateValueSim', '%', true); 
+            calculateRPVSim();
+        });
+
+        function updateRangeLabelSim(inputId, labelId, suffix, isInitial = false) {
+            const input = document.getElementById(inputId);
+            const label = document.getElementById(labelId);
+
+            // [FIX]: Null check added for robustness in embedded environments
+            if (!label) {
+                console.error(`Error: Label element with ID '${labelId}' not found.`);
+                return; // Prevents TypeError
+            }
+
+            const fixed = (inputId === 'taxRateSim' || isInitial) ? 1 : 1; 
+            label.textContent = parseFloat(input.value).toFixed(fixed) + suffix;
+            
+            // [FIX]: Logic that updated secondary display elements (like displayFailRiskSim) removed 
+            // as those elements are no longer present in the simplified HTML structure.
+        }
+
+        function calculateRPVSim() {
+            const hurdleRate = parseFloat(document.getElementById('hurdleRateSim').value) / 100;
+            const failRisk = parseFloat(document.getElementById('failRiskSim').value) / 100;
+            const taxRate = parseFloat(document.getElementById('taxRateSim').value) / 100;
+
+            // 월별 할인율 계산
+            const monthlyDiscountRate = Math.pow(1 + hurdleRate, 1/12) - 1;
+
+            // 1. 넷플릭스 RPV
+            const successProb = 1 - failRisk;
+            const netflixExpectedValue = 
+                (successProb * NETFLIX_SUCCESS_VALUE) + 
+                (failRisk * NETFLIX_FAILURE_VALUE);
+            const netflixPV = netflixExpectedValue / Math.pow(1 + monthlyDiscountRate, NETFLIX_TIME_MONTHS);
+            
+            // 2. 파라마운트 RPV
+            const netCashAfterTax = PARAMOUNT_CASH_VALUE * (1 - taxRate);
+            const reinvestmentFV = netCashAfterTax * Math.pow(1 + monthlyDiscountRate, REINVEST_TIME_MONTHS);
+            const paramountPV = reinvestmentFV / Math.pow(1 + monthlyDiscountRate, NETFLIX_TIME_MONTHS);
+
+
+            // 3. 결과 디스플레이
+            document.getElementById('netflixRPVSim').textContent = '$' + netflixPV.toFixed(2);
+            document.getElementById('paramountRPVSim').textContent = '$' + paramountPV.toFixed(2);
+
+            const netflixCard = document.getElementById('netflixCardSim');
+            const paramountCard = document.getElementById('paramountCardSim');
+            const winnerDisplay = document.getElementById('winnerDisplaySim');
+
+            // Winner 판정 및 시각화
+            netflixCard.classList.remove('highlight-win');
+            paramountCard.classList.remove('highlight-win');
+
+            if (paramountPV > netflixPV) {
+                paramountCard.classList.add('highlight-win');
+                winnerDisplay.innerHTML = '파라마운트 딜 **(RPV 우위)**';
+                winnerDisplay.style.color = '#065f46'; /* Green-800 */
+            } else if (netflixPV > paramountPV) {
+                netflixCard.classList.add('highlight-win');
+                winnerDisplay.innerHTML = '넷플릭스 딜 **(RPV 우위)**';
+                winnerDisplay.style.color = '#991b1b'; /* Red-800 */
+            } else {
+                winnerDisplay.innerHTML = '두 딜의 **RPV가 대등함**';
+                winnerDisplay.style.color = '#1e3a8a'; /* Indigo-900 */
+            }
+        }
+    </script>
+</body>
+</html>
